@@ -22,7 +22,7 @@ enum Message{
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
     New,
     Save,
-    FileSaved(Result<(), Error>),
+    FileSaved(Result<PathBuf, Error>),
 }
 
 impl Application for Editor {
@@ -45,7 +45,7 @@ impl Application for Editor {
     }
 
     fn title(&self) -> String {
-        String::from("SYPAD++")
+        String::from("SYRUP+")
     }
 
     fn update(&mut self, message : Message) -> Command<Message>{
@@ -69,10 +69,15 @@ impl Application for Editor {
 
             Message::Save => {
                 let text = self.content.text();
-                Command::perform(save_file(self.path,text), Message::FileSaved)
+                Command::perform(save_file(self.path.clone(),text), Message::FileSaved)
             }
 
-            Message::FileSaved(Ok(())) => Command::none(),
+            Message::FileSaved(Ok(path)) => {
+                self.path = Some(path);
+         
+                Command::none()
+            }
+
             Message::FileSaved(Err(error)) => {
                 self.error = Some(error);
                 Command::none()
@@ -104,7 +109,7 @@ impl Application for Editor {
 
        
         let status_bar = {
-            let status = if let Some(Error::IO(error)) = self.error.as_ref() {
+            let status = if let Some(Error::IOFailed(error)) = self.error.as_ref() {
                 text(error.to_string())
             }else {
                 match self.path.as_deref().and_then(Path::to_str) {
@@ -150,7 +155,7 @@ async fn load_file(path: PathBuf) -> Result<(PathBuf,Arc<String>), Error>{
     Ok((path, contents))
 }
 
-async fn save_file(path: Option<PathBuf>, text : String) -> Result<(), Error> {
+async fn save_file(path: Option<PathBuf>, text : String) -> Result<PathBuf, Error> {
     let path = if let Some(path) = path { path } else {
         rfd::AsyncFileDialog::new().set_title("Choose a File name .. ")
         .save_file()
@@ -160,7 +165,9 @@ async fn save_file(path: Option<PathBuf>, text : String) -> Result<(), Error> {
     };
     tokio::fs::write(&path, text)
     .await
-    .map_err(|error| Error::IOFailed(error.kind()))
+    .map_err(|error| Error::IOFailed(error.kind()))?;
+    
+    Ok(path)
 }
 
 #[derive(Debug, Clone)]
