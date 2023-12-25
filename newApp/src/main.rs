@@ -1,4 +1,4 @@
-use iced::widget::{button , column , container, text_editor, text, row, horizontal_space, button};
+use iced::widget::{column , container, text_editor, text, row, horizontal_space, button};
 use iced::{Theme, Element, Application , Settings, Length, executor, Command};
 
 use std::io;
@@ -49,7 +49,7 @@ impl Application for Editor {
 
             }
             Message::Open => {
-                    Command::perform(pick_file(), Message::FileOpend)
+                    Command::perform(pick_file(), Message::FileOpened);
                     Command::none()
 
             }
