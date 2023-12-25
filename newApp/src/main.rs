@@ -20,6 +20,9 @@ enum Message{
     Edit(text_editor::Action),
     Open,
     FileOpened(Result<(PathBuf, Arc<String>), Error>),
+    New,
+    Save,
+    FileSaved(Result<(), Error>),
 }
 
 impl Application for Editor {
@@ -49,18 +52,39 @@ impl Application for Editor {
         match message {
             Message::Edit(action) => {
                 self.content.edit(action);
-                Command::none()
+                self.error = None;
 
+                Command::none()
             }
+
             Message::Open => {
                     Command::perform(pick_file(), Message::FileOpened)
             }
+
+            Message::New => {
+                self.path = None;
+                self.content = text_editor::Content::new();
+                Command::none()   
+            }
+
+            Message::Save => {
+                let text = self.content.text();
+                Command::perform(save_file(self.path,text), Message::FileSaved)
+            }
+
+            Message::FileSaved(Ok(())) => Command::none(),
+            Message::FileSaved(Err(error)) => {
+                self.error = Some(error);
+                Command::none()
+            }
+
             Message::FileOpened(Ok((path, contents))) => {
-                self.path() = Some(path);
-                self.content = text_editor::Content::with(&content);
+                self.path = Some(path);
+                self.content = text_editor::Content::with(&contents);
                 Command::none()
 
             }
+
             Message::FileOpened(Err(error)) => {
                 self.error = Some(error);
                 Command::none()
@@ -70,22 +94,37 @@ impl Application for Editor {
     }
 
     fn view(&self) -> Element<'_,Message> {
-        let controls = row![button("Open").on_press(Message::Open)];
+        let controls = row![
+            button("Open").on_press(Message::Open), 
+            button("New").on_press(Message::New),
+            button("Save").on_press(Message::Save),
+            ];
+
         let input = text_editor(&self.content).on_edit(Message::Edit);
-        let file_path = match self.path.as_deref().and_then(Path::to_str) {
-            Some(path) => text(path).size(14), 
-            None => text(""),
-        };
 
-        let position = {
-            let (line , column) = self.content.cursor_position();
-            text(format!("{}:{}", line + 1, column + 1))
-        };
+       
+        let status_bar = {
+            let status = if let Some(Error::IO(error)) = self.error.as_ref() {
+                text(error.to_string())
+            }else {
+                match self.path.as_deref().and_then(Path::to_str) {
+                    Some(path) => text(path).size(14), 
+                    None => text("New File"),
+                }
+            };
 
-        let status_bar = row![file_path,horizontal_space(Length::Fill), position];
-        container(column![controls , input,status_bar].spacing(10))
-        .padding(10).into()
+            let position = {
+                let (line, column) = self.content.cursor_position();
+                text(format!("{}:{}", line + 1, column + 1))
+            };
+
+            row![status, horizontal_space(Length::Fill), position]
+        };
+        container(column![controls, input , status_bar].spacing(10))
+        .padding(10)
+        .into()
     }
+
     fn theme(&self) -> Theme {
         Theme::Dark
     }
@@ -106,15 +145,28 @@ async fn load_file(path: PathBuf) -> Result<(PathBuf,Arc<String>), Error>{
     .await
     .map(Arc::new)
     .map_err(|error | error.kind())
-    .map_err(Error::IO)?;
+    .map_err(Error::IOFailed)?;
 
     Ok((path, contents))
+}
+
+async fn save_file(path: Option<PathBuf>, text : String) -> Result<(), Error> {
+    let path = if let Some(path) = path { path } else {
+        rfd::AsyncFileDialog::new().set_title("Choose a File name .. ")
+        .save_file()
+        .await
+        .ok_or(Error::DialogClosed)
+        .map(|handle | handle.path().to_owned())?
+    };
+    tokio::fs::write(&path, text)
+    .await
+    .map_err(|error| Error::IOFailed(error.kind()))
 }
 
 #[derive(Debug, Clone)]
 enum Error {
     DialogClosed,
-    IO(io::ErrorKind),
+    IOFailed(io::ErrorKind),
 }
 
 
