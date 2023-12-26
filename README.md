@@ -2,4 +2,4 @@
 ```
 Build Simple Text Editor For Education Purposes.
 ```
-![ui](/Screenshot%202023-12-26%20190408.png "Image -01 - Interface")
+![Alt text](/Screenshot%202023-12-26%20190408.png "image01-Interface")
